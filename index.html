@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shork - The Shark Fork Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(180deg, #87CEEB 0%, #4682B4 50%, #191970 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background: linear-gradient(180deg, #87CEEB 0%, #4682B4 30%, #1E90FF 60%, #0066CC 100%);
+            border: 3px solid #003366;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            pointer-events: all;
+        }
+        
+        .title {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.7);
+        }
+        
+        .subtitle {
+            font-size: 20px;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        
+        .button {
+            background: linear-gradient(45deg, #FF6B6B, #FF8E53);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(255,107,107,0.3);
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255,107,107,0.4);
+        }
+        
+        .instructions {
+            font-size: 16px;
+            margin-top: 20px;
+            opacity: 0.8;
+            max-width: 400px;
+            line-height: 1.4;
+        }
+        
+        #gameOverScreen .final-score {
+            font-size: 24px;
+            margin: 10px 0;
+            color: #FFD700;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="ui">
+            <div id="score">Fish Stabbed: 0</div>
+            
+            <div id="startScreen">
+                <div class="title">🦈🍴 $SHORK</div>
+                <div class="subtitle">CXcbiTQnWTrK6yKeFqKTDYR2nAe5p68oscLqvBCBpump</div>
+                <div style="font-size: 16px; margin: 10px 0; color: #FFD700;">The Ultimate Shark-Fork Hybrid!</div>
+                <button class="button" onclick="startGame()">START STABBING!</button>
+                <div class="instructions">
+                    Click or press SPACEBAR to swim up<br>
+                    Stab fish with your fork to score points<br>
+                    Avoid the deadly sea mines!<br>
+                    <strong style="color: #FF6B6B;">DON'T TOUCH THE OCEAN FLOOR!</strong>
+                </div>
+            </div>
+            
+            <div id="gameOverScreen" class="hidden">
+                <div class="title">GAME OVER!</div>
+                <div class="final-score">Final Score: <span id="finalScore">0</span></div>
+                <button class="button" onclick="restartGame()">TRY AGAIN</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        let gameState = 'start'; // 'start', 'playing', 'gameOver'
+        let score = 0;
+        let gameSpeed = 2;
+        
+        // Shork properties
+        const shork = {
+            x: 100,
+            y: 300,
+            width: 60,
+            height: 40,
+            velocity: 0,
+            gravity: 0.4,
+            jumpStrength: -8,
+            angle: 0
+        };
+        
+        // Game objects
+        let fish = [];
+        let mines = [];
+        let bubbles = [];
+        let particles = [];
+        
+        // Background elements
+        let seaweed = [];
+        
+        // Initialize seaweed
+        for (let i = 0; i < 10; i++) {
+            seaweed.push({
+                x: i * 100,
+                height: Math.random() * 100 + 50,
+                sway: Math.random() * 2
+            });
+        }
+        
+        // Initialize bubbles
+        for (let i = 0; i < 15; i++) {
+            bubbles.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 8 + 2,
+                speed: Math.random() * 1 + 0.5
+            });
+        }
+        
+        // Input handling
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && gameState === 'playing') {
+                e.preventDefault();
+                jump();
+            }
+        });
+        
+        canvas.addEventListener('click', () => {
+            if (gameState === 'playing') {
+                jump();
+            }
+        });
+        
+        function jump() {
+            shork.velocity = shork.jumpStrength;
+        }
+        
+        function startGame() {
+            gameState = 'playing';
+            document.getElementById('startScreen').classList.add('hidden');
+            resetGame();
+        }
+        
+        function restartGame() {
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            startGame();
+        }
+        
+        function resetGame() {
+            score = 0;
+            shork.y = 300;
+            shork.velocity = 0;
+            fish = [];
+            mines = [];
+            particles = [];
+            gameSpeed = 2;
+            updateScore();
+        }
+        
+        function updateScore() {
+            document.getElementById('score').textContent = 'Fish Stabbed: ' + score;
+        }
+        
+        function spawnFish() {
+            if (Math.random() < 0.015) {
+                fish.push({
+                    x: canvas.width,
+                    y: Math.random() * (canvas.height - 100) + 50,
+                    width: 40,
+                    height: 25,
+                    speed: gameSpeed + Math.random() * 2,
+                    stabbed: false
+                });
+            }
+        }
+        
+        function spawnMine() {
+            if (Math.random() < 0.008) {
+                mines.push({
+                    x: canvas.width,
+                    y: Math.random() * (canvas.height - 100) + 50,
+                    width: 35,
+                    height: 35,
+                    speed: gameSpeed
+                });
+            }
+        }
+        
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.5) * 6,
+                    life: 30,
+                    color: color
+                });
+            }
+        }
+        
+        function updateShork() {
+            shork.velocity += shork.gravity;
+            shork.y += shork.velocity;
+            
+            // Angle based on velocity for animation
+            shork.angle = Math.max(-0.3, Math.min(0.3, shork.velocity * 0.05));
+            
+            // Keep shork in bounds - but hitting floor = game over!
+            if (shork.y < 0) {
+                shork.y = 0;
+                shork.velocity = 0;
+            }
+            if (shork.y > canvas.height - shork.height) {
+                // GAME OVER - hit the ocean floor!
+                gameState = 'gameOver';
+                document.getElementById('finalScore').textContent = score;
+                document.getElementById('gameOverScreen').classList.remove('hidden');
+                createParticles(shork.x + shork.width/2, shork.y + shork.height/2, '#8B4513');
+            }
+        }
+        
+        function updateFish() {
+            for (let i = fish.length - 1; i >= 0; i--) {
+                const f = fish[i];
+                f.x -= f.speed;
+                
+                // Check collision with shork
+                if (!f.stabbed && 
+                    f.x < shork.x + shork.width && 
+                    f.x + f.width > shork.x &&
+                    f.y < shork.y + shork.height && 
+                    f.y + f.height > shork.y) {
+                    
+                    f.stabbed = true;
+                    score++;
+                    updateScore();
+                    createParticles(f.x + f.width/2, f.y + f.height/2, '#FFD700');
+                    
+                    // Increase game speed slightly
+                    gameSpeed += 0.1;
+                }
+                
+                // Remove off-screen fish
+                if (f.x + f.width < 0) {
+                    fish.splice(i, 1);
+                }
+            }
+        }
+        
+        function updateMines() {
+            for (let i = mines.length - 1; i >= 0; i--) {
+                const m = mines[i];
+                m.x -= m.speed;
+                
+                // Check collision with shork
+                if (m.x < shork.x + shork.width && 
+                    m.x + m.width > shork.x &&
+                    m.y < shork.y + shork.height && 
+                    m.y + m.height > shork.y) {
+                    
+                    // Game over!
+                    gameState = 'gameOver';
+                    document.getElementById('finalScore').textContent = score;
+                    document.getElementById('gameOverScreen').classList.remove('hidden');
+                    createParticles(shork.x + shork.width/2, shork.y + shork.height/2, '#FF4444');
+                }
+                
+                // Remove off-screen mines
+                if (m.x + m.width < 0) {
+                    mines.splice(i, 1);
+                }
+            }
+        }
+        
+        function updateBubbles() {
+            bubbles.forEach(bubble => {
+                bubble.y -= bubble.speed;
+                bubble.x += Math.sin(bubble.y * 0.01) * 0.5;
+                
+                if (bubble.y < -bubble.size) {
+                    bubble.y = canvas.height + bubble.size;
+                    bubble.x = Math.random() * canvas.width;
+                }
+            });
+        }
+        
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+        
+        function drawBackground() {
+            // Seaweed
+            ctx.fillStyle = '#228B22';
+            seaweed.forEach((weed, index) => {
+                const sway = Math.sin(Date.now() * 0.002 + index) * weed.sway;
+                ctx.save();
+                ctx.translate(weed.x + sway, canvas.height);
+                ctx.fillRect(-5, -weed.height, 10, weed.height);
+                ctx.restore();
+            });
+            
+            // Move seaweed
+            seaweed.forEach(weed => {
+                weed.x -= gameSpeed * 0.5;
+                if (weed.x < -50) {
+                    weed.x = canvas.width + 50;
+                    weed.height = Math.random() * 100 + 50;
+                }
+            });
+        }
+        
+        function drawBubbles() {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            bubbles.forEach(bubble => {
+                ctx.beginPath();
+                ctx.arc(bubble.x, bubble.y, bubble.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        function drawShork() {
+            ctx.save();
+            ctx.translate(shork.x + shork.width/2, shork.y + shork.height/2);
+            ctx.rotate(shork.angle);
+            
+            // SHARK BODY FIRST - Main shark body (bluish-gray)
+            ctx.fillStyle = '#4A5568';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, shork.width/2, shork.height/2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Shark belly (lighter)
+            ctx.fillStyle = '#A0AEC0';
+            ctx.beginPath();
+            ctx.ellipse(0, 5, shork.width/2 - 5, shork.height/2 - 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Shark dorsal fin on top
+            ctx.fillStyle = '#2D3748';
+            ctx.beginPath();
+            ctx.moveTo(-8, -shork.height/2);
+            ctx.lineTo(-5, -shork.height/2 - 20);
+            ctx.lineTo(8, -shork.height/2 - 5);
+            ctx.lineTo(5, -shork.height/2);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Shark tail fin
+            ctx.fillStyle = '#4A5568';
+            ctx.beginPath();
+            ctx.moveTo(-shork.width/2, -5);
+            ctx.lineTo(-shork.width/2 - 15, -15);
+            ctx.lineTo(-shork.width/2 - 18, 0);
+            ctx.lineTo(-shork.width/2 - 15, 15);
+            ctx.lineTo(-shork.width/2, 5);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Side fins
+            ctx.fillStyle = '#2D3748';
+            ctx.beginPath();
+            ctx.ellipse(-10, 8, 8, 4, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(-10, -8, 8, 4, 0.3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // FORK HEAD FUSION - Giant silver fork "helmet" fused to the head
+            const forkGradient = ctx.createLinearGradient(shork.width/4, -shork.height/2, shork.width/2 + 25, shork.height/2);
+            forkGradient.addColorStop(0, '#E2E8F0');
+            forkGradient.addColorStop(0.3, '#CBD5E0');
+            forkGradient.addColorStop(0.7, '#A0AEC0');
+            forkGradient.addColorStop(1, '#718096');
+            
+            // Fork handle base (fused to shark head)
+            ctx.fillStyle = forkGradient;
+            ctx.beginPath();
+            ctx.ellipse(shork.width/3, 0, 15, shork.height/2 - 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Fork connection to shark (organic fusion point)
+            ctx.fillStyle = '#68D391';
+            ctx.beginPath();
+            ctx.ellipse(shork.width/4, 0, 8, shork.height/2 - 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // THE SHARK SNOUT poking through the fork prongs
+            ctx.fillStyle = '#2D3748';
+            ctx.beginPath();
+            ctx.ellipse(shork.width/2 + 15, 0, 8, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Shark nostrils on the snout
+            ctx.fillStyle = '#1A202C';
+            ctx.beginPath();
+            ctx.arc(shork.width/2 + 18, -2, 1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(shork.width/2 + 18, 2, 1, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // FORK PRONGS - Four menacing tines extending above the head
+            ctx.fillStyle = '#CBD5E0';
+            ctx.strokeStyle = '#4A5568';
+            ctx.lineWidth = 1;
+            
+            for (let i = 0; i < 4; i++) {
+                const prongX = shork.width/2 + 5;
+                const prongY = -15 + i * 8;
+                const prongLength = 20;
+                
+                // Draw prong as sharp tapered spear
+                ctx.beginPath();
+                ctx.moveTo(prongX, prongY);
+                ctx.lineTo(prongX + prongLength, prongY - 2);
+                ctx.lineTo(prongX + prongLength + 3, prongY);
+                ctx.lineTo(prongX + prongLength, prongY + 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Deadly sharp tip
+                ctx.fillStyle = '#E2E8F0';
+                ctx.beginPath();
+                ctx.arc(prongX + prongLength + 3, prongY, 1, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#CBD5E0';
+            }
+            
+            // Fork handle details (medieval utensil look)
+            ctx.strokeStyle = '#4A5568';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(shork.width/3 - 10, -8);
+            ctx.lineTo(shork.width/3 + 10, -8);
+            ctx.moveTo(shork.width/3 - 10, 8);
+            ctx.lineTo(shork.width/3 + 10, 8);
+            ctx.stroke();
+            
+            // SHARK EYE - menacing and predatory
+            ctx.fillStyle = '#1A202C';
+            ctx.beginPath();
+            ctx.ellipse(5, -8, 10, 7, 0.2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Eye pupil
+            ctx.fillStyle = '#E53E3E';
+            ctx.beginPath();
+            ctx.arc(8, -8, 4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Predatory highlight
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(6, -10, 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Shark mouth with teeth
+            ctx.fillStyle = '#1A202C';
+            ctx.beginPath();
+            ctx.ellipse(15, 5, 8, 3, 0, 0, Math.PI);
+            ctx.fill();
+            
+            // Sharp teeth
+            ctx.fillStyle = 'white';
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.moveTo(10 + i * 3, 5);
+                ctx.lineTo(11 + i * 3, 2);
+                ctx.lineTo(12 + i * 3, 5);
+                ctx.closePath();
+                ctx.fill();
+            }
+            
+            // Gill slits
+            ctx.strokeStyle = '#2D3748';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 4; i++) {
+                const gillX = -15 + i * 5;
+                ctx.beginPath();
+                ctx.moveTo(gillX, -5);
+                ctx.lineTo(gillX + 3, 0);
+                ctx.moveTo(gillX, 5);
+                ctx.lineTo(gillX + 3, 0);
+                ctx.stroke();
+            }
+            
+            ctx.restore();
+        }
+        
+        function drawFish() {
+            fish.forEach(f => {
+                ctx.fillStyle = f.stabbed ? '#FFB347' : '#FFA500';
+                ctx.fillRect(f.x, f.y, f.width, f.height);
+                
+                // Fish tail
+                ctx.fillStyle = f.stabbed ? '#FF8C00' : '#FF6347';
+                ctx.beginPath();
+                ctx.moveTo(f.x, f.y + f.height/2);
+                ctx.lineTo(f.x - 15, f.y);
+                ctx.lineTo(f.x - 15, f.y + f.height);
+                ctx.fill();
+                
+                // Fish eye
+                if (!f.stabbed) {
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath();
+                    ctx.arc(f.x + f.width - 8, f.y + 8, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'black';
+                    ctx.beginPath();
+                    ctx.arc(f.x + f.width - 8, f.y + 8, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+        
+        function drawMines() {
+            mines.forEach(m => {
+                // Mine body
+                ctx.fillStyle = '#333';
+                ctx.beginPath();
+                ctx.arc(m.x + m.width/2, m.y + m.height/2, m.width/2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Mine spikes
+                ctx.fillStyle = '#666';
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    const spikeX = m.x + m.width/2 + Math.cos(angle) * (m.width/2 + 5);
+                    const spikeY = m.y + m.height/2 + Math.sin(angle) * (m.height/2 + 5);
+                    ctx.beginPath();
+                    ctx.arc(spikeX, spikeY, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                // Warning light
+                const lightIntensity = Math.sin(Date.now() * 0.01) * 0.5 + 0.5;
+                ctx.fillStyle = `rgba(255, 0, 0, ${lightIntensity})`;
+                ctx.beginPath();
+                ctx.arc(m.x + m.width/2, m.y + m.height/2, 4, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        function drawParticles() {
+            particles.forEach(p => {
+                const alpha = p.life / 30;
+                ctx.fillStyle = p.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        function gameLoop() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (gameState === 'playing') {
+                // Update
+                updateShork();
+                updateFish();
+                updateMines();
+                updateBubbles();
+                updateParticles();
+                
+                // Spawn new objects
+                spawnFish();
+                spawnMine();
+                
+                // Draw everything
+                drawBackground();
+                drawBubbles();
+                drawShork();
+                drawFish();
+                drawMines();
+                drawParticles();
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the game loop
+        gameLoop();
+    </script>
+</body>
+</html>
